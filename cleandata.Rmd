@@ -216,10 +216,10 @@ dlonganonymous <- dlong %>%
          name = name2) %>% 
   select(-namedrop)
 
-datesanonymous <-  dates %>% 
-    left_join(nameanonymized, by = "name") %>% 
-    rename(namedrop = name, 
-         name = name2) %>% 
+datesanonymous <- dates %>%
+  select_if(funs(!is.interval(.))) %>%
+  left_join(nameanonymized, by = "name") %>%
+  rename(namedrop = name, name = name2) %>%
   select(-namedrop)
 
 write_rds(demographics, "./www/mergeddemographics.rds")

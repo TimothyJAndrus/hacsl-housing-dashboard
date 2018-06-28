@@ -438,26 +438,22 @@ server <- function(input, output) {
   output$Vouchertime <- renderPlotly({
     
     time1 <- dates %>% 
-      select_if(funs(!is.interval(.))) %>% 
       filter(referraltopacketdays>=0) %>% 
       summarise(`Referral to Packet` = mean(referraltopacketdays)) %>% 
       round() 
     
     
     time2 <- dates %>% 
-      select_if(funs(!is.interval(.))) %>% 
       filter(packettoappdays>=0) %>% 
       summarise(`Packet to Application` = mean(packettoappdays)) %>%  
       round()
     
     time3 <- dates %>% 
-      select_if(funs(!is.interval(.))) %>% 
       filter(appvouchdays>=0) %>% 
       summarise(`Application to Voucher` = mean(appvouchdays)) %>%  
       round()
     
     time4 <- dates %>% 
-      select_if(funs(!is.interval(.))) %>% 
       filter(vouchleasedays>=0) %>% 
       summarise(`Voucher to LeaseUp` = mean(vouchleasedays)) %>%  
       round()
@@ -659,7 +655,6 @@ server <- function(input, output) {
 
   output$Vouchertimed <- renderValueBox({
     tim <- dates %>% 
-      select_if(funs(!is.interval(.))) %>% 
       filter(referraltopacketdays>=0) %>% 
       summarise(meandays = mean(referraltopacketdays)) %>% 
       round()
@@ -670,7 +665,6 @@ server <- function(input, output) {
   
   output$Vouchertimedpacket <- renderValueBox({
     tim <- dates %>% 
-      select_if(funs(!is.interval(.))) %>% 
       filter(packettoappdays>=0) %>% 
       summarise(meandays = mean(packettoappdays)) %>%  
       round()
@@ -680,7 +674,6 @@ server <- function(input, output) {
   
   output$Vouchertimedvoucher <- renderValueBox({
     tim <- dates %>% 
-      select_if(funs(!is.interval(.))) %>% 
       filter(appvouchdays>=0) %>% 
       summarise(meandays = mean(appvouchdays)) %>%  
       round()
@@ -691,7 +684,6 @@ server <- function(input, output) {
   
   output$Vouchertoleaseup <- renderValueBox({
     tim <- dates %>% 
-      select_if(funs(!is.interval(.))) %>% 
       filter(vouchleasedays>=0) %>% 
       summarise(meandays = mean(vouchleasedays)) %>% 
       round()
@@ -702,7 +694,6 @@ server <- function(input, output) {
   
   output$Referraltovouch <- renderValueBox({
     tim <- dates %>% 
-      select_if(funs(!is.interval(.))) %>% 
       filter(referraltovoucher>=0) %>% 
       summarise(meandays = mean(referraltovoucher)) %>%  
       round()
@@ -712,7 +703,6 @@ server <- function(input, output) {
   
   output$Referraltoleaseup <- renderValueBox({
     tim <- dates %>% 
-      select_if(funs(!is.interval(.))) %>% 
       filter(referraltoleaseup>=0) %>% 
       summarise(meandays = mean(referraltoleaseup)) %>%  
       round()
