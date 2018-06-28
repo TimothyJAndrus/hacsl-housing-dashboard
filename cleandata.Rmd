@@ -1,0 +1,235 @@
+---
+title: "Exploratory Analysis"
+author: "Gwendolyn"
+date: "5/16/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# Load packages 
+library(knitr)
+library(tidyverse)
+library(anonymizer)
+library(lubridate)
+library(forcats)
+library(googlesheets)
+
+```
+
+```{r import data, echo=FALSE}
+
+# Use Google Sheets to read in data
+
+gs_ls("HACSLdata")
+hacsl <- gs_title("HACSLdata")
+
+client <- hacsl %>% gs_read(ws = 1)
+vouch <- hacsl %>% gs_read(ws = 3)
+lease <- hacsl %>% gs_read(ws = 4)
+
+gs_ls("Voucher issue.lease up date review Jun 7 2018.xlsx")
+dates <- gs_title("Voucher issue.lease up date review Jun 7 2018.xlsx")
+dates <- dates %>% gs_read(ws = 1)
+
+
+```
+
+```{r clean and merge, echo=FALSE}
+
+client <- client %>% 
+  rename(ClientId = HOH_SSN) 
+  
+
+mergeclientvouch <- full_join(vouch, client, by = c("ClientId" = "ClientId"))
+
+mergelease <- full_join(mergeclientvouch, lease, by = "VoucherID")
+
+childrenbyclientid <- mergelease %>% 
+  filter(RelationshipHOH=="Other Youth Under 18") %>% 
+  group_by(ClientId, RelationshipHOH) %>% 
+  summarise(NumberKids = n()) %>% 
+  #rename(NumberKids = n) %>% 
+  select(ClientId, NumberKids)
+
+adultsbyclientid <- mergelease %>% filter(RelationshipHOH=="Head" | RelationshipHOH=="Co-Head" | RelationshipHOH=="Live-In Aide" | RelationshipHOH=="Other Adult" | RelationshipHOH=="Spouse") %>% 
+  group_by(ClientId, RelationshipHOH) %>% 
+  summarise(n = n()) %>% 
+  spread(RelationshipHOH, n) %>% 
+  rename(cohead = "Co-Head", aide = "Live-In Aide", otheradult = "Other Adult") %>% 
+  mutate(cohead = ifelse(is.na(cohead), 0, cohead), 
+         aide =ifelse(is.na(aide), 0, aide), 
+         otheradult = ifelse(is.na(otheradult), 0, otheradult), 
+         Head = ifelse(is.na(Head), 0, Head), 
+         Spouse = ifelse(is.na(Spouse), 0, Spouse)) %>% 
+  mutate(TotalAdults = cohead + Head + aide + otheradult + Spouse)
+
+
+mergeleasekids <- full_join(mergelease, childrenbyclientid, by = c("ClientId" = "ClientId"))
+
+mergeleasekidsadults <- full_join(mergeleasekids, adultsbyclientid, by = "ClientId")
+
+demographics <- mergeleasekidsadults %>% 
+  mutate(NumberKids = ifelse(is.na(NumberKids), 0, NumberKids)) %>% 
+  mutate(Kids = ifelse(NumberKids==0, FALSE, TRUE)) 
+
+
+
+```
+
+Clean date file and make demographics long.  
+
+```{r clean dates file}
+
+
+# Function for adding date variables
+add_date_vars <- function(my_data){
+  
+  ## Takes the date from data and adds time variables ##
+  
+  today <- Sys.Date()
+  
+  my_data$date <- as.Date(my_data$DateUpdated,format = "%m/%d/%Y")
+  
+  my_data$year_week <- format(my_data$date, '%Y-%W')
+  my_data$year_month <- format(my_data$date, '%Y-%m')
+  my_data$day <- as.numeric(lubridate::yday(my_data$date))
+  my_data$week <- as.numeric(lubridate::week(my_data$date))
+  my_data$month <- (lubridate::month(my_data$date, label = TRUE))
+  my_data$year <- as.numeric(lubridate::year(my_data$date))
+  my_data$days_ago <- as.numeric(difftime(my_data$date, today, units = "days"))
+  
+  my_data$wday <- as.numeric(lubridate::wday(my_data$date))
+  my_data$day_type <- ifelse(wday(my_data$date) == 1, "weekend",
+                             ifelse(wday(my_data$date) == 7, "weekend",
+                                    "weekday"))
+  
+  return(my_data)
+}
+
+
+# Clean the data ----------------------------------------------------------
+dates <- dates %>% 
+  transmute(name = NAME, 
+            referral = mdy(`REFERRAL DATE FROM TRIAGE`), 
+            packet = mdy(`DATE REFERRAL PACKET RECEIVED`), 
+            application = mdy(`DATE APPLICATION WAS PROCESSED`), 
+            voucher = mdy(`DATE VOUCHER ISSUED`), 
+            leaseup = mdy(`DATE OF LEASE UP`))
+            
+
+dates <- dates %>% 
+  mutate(intervalrefpack = interval(referral, packet)) %>% 
+  #mutate(referraltopacketdur = as.duration(intervalrefpack)) %>%
+  mutate(referraltopacketdays = as.duration(intervalrefpack) / ddays(1)) %>% 
+  #mutate(referraltopacket = as.period(referraltopacketdur))
+  mutate(intervalpackapp = interval(packet, application)) %>% 
+  mutate(packettoappdays = as.duration(intervalpackapp) / ddays(1)) %>% 
+  mutate(intervalappvouch = interval(application, voucher)) %>% 
+  mutate(appvouchdays = as.duration(intervalappvouch) / ddays(1)) %>% 
+  mutate(intervalvouchlease = interval(voucher, leaseup)) %>% 
+  mutate(vouchleasedays = as.duration(intervalvouchlease) / ddays(1)) %>% 
+  mutate(intervalrefvouch = interval(referral, voucher)) %>% 
+  mutate(referraltovoucher = as.duration(intervalrefvouch) / ddays(1)) %>% 
+  mutate(intervalrefleaseup = interval(referral, leaseup)) %>% 
+  mutate(referraltoleaseup = as.duration(intervalrefleaseup) / ddays(1))
+
+datesgathered <- dates %>%
+  select(name, referraltopacketdays, packettoappdays, appvouchdays, referral, vouchleasedays) %>%
+  rename('ReferralToPacket' = referraltopacketdays,
+         'PacketToApplication' = packettoappdays,
+         'ApplicationToVoucher' = appvouchdays, 
+         'VoucherToLeaseUp' = vouchleasedays) %>%
+  gather(key = "point", value = "days", 'ReferralToPacket', 'PacketToApplication', 
+         'ApplicationToVoucher', 'VoucherToLeaseUp') %>%
+  filter(!is.na(referral)) %>%
+  group_by(name) %>%
+  mutate(in_process = any(is.na(days))) %>%
+  ungroup() %>%
+  mutate(point = as.factor(point)) %>%
+  mutate(point = ordered(point, levels = c("ReferralToPacket", "PacketToApplication", 
+                                           "ApplicationToVoucher", "VoucherToLeaseUp")))
+
+demographics <- demographics %>% 
+  filter(RelationshipHOH=="Head") %>% 
+  mutate(client_type = ifelse(TotalAdults>=1 & Kids==FALSE, "HH Adults Only",
+                              ifelse(Kids==TRUE, "HH W Children", NA))) %>% 
+  add_date_vars() %>% 
+  mutate(IncomeLevel = fct_relevel(IncomeLevel, c("Extremely Low", "Very Low", "Low"))) %>% 
+  mutate(BedroomSize.y = case_when(BedroomSize.y == "0" ~ "Studio", TRUE ~ as.character(BedroomSize.y))) %>% 
+  mutate(BedroomSize.y = fct_relevel(BedroomSize.y, "Studio"))
+
+
+dlong <- dates %>% 
+  select_if(funs(!is.interval(.))) %>% 
+  select(-contains("days")) %>% 
+  mutate(referralx = referral) %>% 
+  gather(key = 'point', value = 'date', -name, -referralx) %>% 
+  rename(referral = referralx) %>% 
+  arrange(referral, name) %>% 
+  group_by(referral, name) %>% 
+  mutate(days = date - lag(date)) %>% 
+  #filter(point != 'leaseup') %>% 
+  mutate(process_point = is.na(date) & !is.na(lag(date))) %>% 
+  mutate(days = ifelse(process_point, today() - lag(date), days)) %>% 
+  filter(point != 'referral') %>% 
+  mutate(in_process = ifelse(point=="voucher" & is.na(days), TRUE, FALSE)) %>% 
+  mutate(pointname = case_when(point == 'packet' ~ 'ReferralToPacket',
+                               point == 'application' ~ 'PacketToApplication',
+                               point == 'voucher' ~ 'ApplicationToVoucher',
+                               point == 'leaseup' ~ 'VoucherToLeaseUp',
+                               TRUE ~ NA_character_)) %>% 
+  ungroup() %>% 
+  mutate(pointname = ordered(pointname, levels = c("ApplicationToVoucher", "PacketToApplication", "ReferralToPacket", "VoucherToLeaseUp"))) #%>% 
+  # TODO remind them that they have bad data
+#  filter(days >= 0)
+
+bestorder <- c("ReferralToPacket", "PacketToApplication", "ApplicationToVoucher", "VoucherToLeaseUp")
+```
+
+```{r anonymize data}
+## Anonymize Data and add it to the repo
+
+demographics <- demographics %>% 
+  select(-StreetAddress, -OwnerID, -PayeeID, -LeaseID, -VoucherID, -ClientId, -SSN, -LastName, -FirstName, -DOB, -MiddleName)
+
+namevector <- datesgathered %>% 
+  select(name) %>% 
+  mutate(name2 = name) %>% 
+  distinct()
+
+nameanonymized <- namevector %>%
+  # Now use an algo to anon
+  mutate(name2 = anonymize(name2, .algo = "sha256", .seed = 123)) 
+
+
+demographicsanonymized <- datesgathered %>% 
+  left_join(nameanonymized, by = "name") %>% 
+  rename(namedrop = name, 
+         name = name2) %>% 
+  select(-namedrop)
+
+dlonganonymous <- dlong %>% 
+  left_join(nameanonymized, by = "name") %>% 
+  rename(namedrop = name, 
+         name = name2) %>% 
+  select(-namedrop)
+
+datesanonymous <-  dates %>% 
+    left_join(nameanonymized, by = "name") %>% 
+    rename(namedrop = name, 
+         name = name2) %>% 
+  select(-namedrop)
+
+write_rds(demographics, "./www/mergeddemographics.rds")
+write_rds(demographicsanonymized, "./www/datesgathered.rds")
+write_rds(dlonganonymous, "./www/dlong.rds")
+write_rds(datesanonymous, "./www/dates.rds")
+
+
+
+```
+
+
+
